@@ -11,6 +11,7 @@ const firebaseConfig = {
 // Inicializar Firebase (compat)
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
 
 // DOM
 const taskInput    = document.getElementById('taskInput');
@@ -23,8 +24,56 @@ const boardList    = document.getElementById('boardList');
 const boardInput   = document.getElementById('boardInput');
 const addBoardBtn  = document.getElementById('addBoardBtn');
 
+
+// botones para gogle
+
+const loginBtn = document.getElementById('loginBtn');
+const logoutBtn =  document.getElementById('logoutBtn');
+const userInfo = document.getElementById('userInfo');
+
 let currentBoardId = null;
+let currentUser = null;
 let unsubscribeTasks = null; // para apagar/encender el listener al cambiar de tablero
+
+
+
+// funciones para login y logut de google
+loginBtn.addEventListener('click', async () => {
+  const provider = new firebase.auth.GoogleAuthProvider()
+  await auth.signInWithPopup(provider)
+})
+
+
+auth.onAuthStateChanged(user =>{
+console.log('@@@ user => ', user)
+  if(user){
+currentUser = user
+userInfo.textContent = user.email
+loginBtn.style.display = 'none'
+logoutBtn.style.display = "block"
+boardInput.disabled = false
+addBoardBtn.disabled = false
+boardList.disabled = false
+loadTask()
+} else{
+currentUser = null
+userInfo.textContent = 'No autenticado'
+loginBtn.style.display = 'block'
+logoutBtn.style.display = "none"
+boardInput.disabled = true
+addBoardBtn.disabled = true
+boardList.innerHTML = ''
+boardTitle.textContent = 'Inicia secion para ver tus tareas'
+taskInput.disabled = true
+addTaskBtn.disabled = true
+boardList.disabled = true
+pendingTasks.innerHTML = ''
+doneTasks.innerHTML = ''
+
+}
+
+})
+
 
 // ---- BOARDS ----
 addBoardBtn.addEventListener('click', async () => {

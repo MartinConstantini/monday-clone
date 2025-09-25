@@ -1,42 +1,57 @@
 <!doctype html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Monday Clone - JR</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
 
-      <script src="https://www.gstatic.com/firebasejs/12.2.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore-compat.js"></script>
+    <!-- Firebase (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/12.2.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.2.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore-compat.js"></script>
 </head>
 
 
   <body class="bg-light">
-
-     <div class="container py-4">
-      <h1 class="text-center mb-4">🚀 Clon de Monday.com</h1>
-
+    <div class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <div class="container-fluid">
+        <a href="#" class="navbar-brand">Monday Clone</a>
+        <div class="d-flex">
+          <span class="navbar-text me-3" id="userInfo">
+            No autenticado 
+          </span>
+          <button class="btn btn-light me-2" id="loginBtn">
+            Login con google
+          </button>
+          <button class="btn btn-light" id="logoutBtn" style="display: none;">
+            logout
+          </button>
+        </div>
+      </div>
+    </div>
+     
+    
+    
+    <div class="container-fluid py-4">
       <div class="row">
-        <!-- Sidebar -->
         <div class="col-md-3 border-end">
           <h5 class="mb-3">📋 Tableros</h5>
-
           <ul class="list-group mb-3" id="boardList"></ul>
-
           <div class="input-group mb-3">
             <input type="text" class="form-control" id="boardInput" placeholder="Tablero Nuevo...">
-            <button class="btn btn-success" id="addBoardBtn" type="button">+</button>
+            <button class="btn btn-success" id="addBoardBtn" type="button" disabled>+</button>
           </div>
         </div>
 
         <!-- Main -->
         <div class="col-md-9">
-          <h2 id="boardTitle" class="text-center mb-4">📋 Selecciona un tablero</h2>
+          <h2 id="boardTitle" class="text-center mb-4">Inicia secion para ver tareas</h2>
 
           <!-- Input para las tareas -->
           <div class="input-group mb-3">
             <input type="text" id="taskInput" class="form-control" placeholder="Escribe una tarea...">
-            <button class="btn btn-primary" id="addTaskBtn" type="button">Agregar</button>
+            <button class="btn btn-primary" id="addTaskBtn" type="button">+</button>
           </div>
 
           <!-- Listas -->
@@ -56,13 +71,6 @@
         </div>
       </div>
     </div>
-
-
-    <!--Listado de tareas
-    <div class="list-group">
-      <ul class="list-group" id="taskList"></ul>
-    </div>
-    -->
 
     <script src="/js/app.js"></script>
   </body>

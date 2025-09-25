@@ -1,4 +1,3 @@
-// Configuración
 const firebaseConfig = {
   apiKey: "AIzaSyAVnMZ-k-3k3F-XCQi9oj9z2VEo2zIWhpw",
   authDomain: "ad-2025-99da3.firebaseapp.com",
@@ -13,7 +12,9 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
+// ==============================
 // DOM
+// ==============================
 const taskInput    = document.getElementById('taskInput');
 const addTaskBtn   = document.getElementById('addTaskBtn');
 const pendingTasks = document.getElementById('pendingTasks');
@@ -24,58 +25,138 @@ const boardList    = document.getElementById('boardList');
 const boardInput   = document.getElementById('boardInput');
 const addBoardBtn  = document.getElementById('addBoardBtn');
 
+// botones google
+const loginBtn  = document.getElementById('loginBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+const userInfo  = document.getElementById('userInfo');
 
-// botones para gogle
+// ==============================
+//
+// Estado
+//
+// ==============================
+let currentBoardId      = null;
+let currentUser         = null;
+let unsubscribeTasks    = null; // listener de tasks del board actual
+let unsubscribeBoards   = null; // listener de boards
 
-const loginBtn = document.getElementById('loginBtn');
-const logoutBtn =  document.getElementById('logoutBtn');
-const userInfo = document.getElementById('userInfo');
-
-let currentBoardId = null;
-let currentUser = null;
-let unsubscribeTasks = null; // para apagar/encender el listener al cambiar de tablero
-
-
-
-// funciones para login y logut de google
+// ==============================
+// Auth
+// ==============================
 loginBtn.addEventListener('click', async () => {
-  const provider = new firebase.auth.GoogleAuthProvider()
-  await auth.signInWithPopup(provider)
-})
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  } catch (e) {
+    console.error('Error de login:', e);
+    alert('No se pudo iniciar sesión.');
+  }
+});
 
+logoutBtn.addEventListener('click', async () => {
+  try {
+    await auth.signOut();
+  } catch (e) {
+    console.error('Error al cerrar sesión:', e);
+    alert('No se pudo cerrar sesión.');
+  }
+});
 
-auth.onAuthStateChanged(user =>{
-console.log('@@@ user => ', user)
-  if(user){
-currentUser = user
-userInfo.textContent = user.email
-loginBtn.style.display = 'none'
-logoutBtn.style.display = "block"
-boardInput.disabled = false
-addBoardBtn.disabled = false
-boardList.disabled = false
-loadTask()
-} else{
-currentUser = null
-userInfo.textContent = 'No autenticado'
-loginBtn.style.display = 'block'
-logoutBtn.style.display = "none"
-boardInput.disabled = true
-addBoardBtn.disabled = true
-boardList.innerHTML = ''
-boardTitle.textContent = 'Inicia secion para ver tus tareas'
-taskInput.disabled = true
-addTaskBtn.disabled = true
-boardList.disabled = true
-pendingTasks.innerHTML = ''
-doneTasks.innerHTML = ''
+auth.onAuthStateChanged(async (user) => {
+  console.log('@@@ user =>', user);
 
+  // Limpieza básica
+  if (unsubscribeTasks) { unsubscribeTasks(); unsubscribeTasks = null; }
+  if (user) {
+    // Sesión iniciada
+    currentUser = user;
+    userInfo.textContent = user.email;
+    loginBtn.style.display  = 'none';
+    logoutBtn.style.display = 'block';
+
+    boardInput.disabled = false;
+    addBoardBtn.disabled = false;
+
+    taskInput.disabled  = true;  // aún no hay board seleccionado
+    addTaskBtn.disabled = true;
+
+    // Iniciar listener de boards si no existe
+    if (!unsubscribeBoards) startBoardsListener();
+  } else {
+    // Sesión cerrada
+    currentUser = null;
+    userInfo.textContent  = 'No autenticado';
+    loginBtn.style.display  = 'block';
+    logoutBtn.style.display = 'none';
+
+    boardInput.disabled = true;
+    addBoardBtn.disabled = true;
+
+    taskInput.disabled  = true;
+    addTaskBtn.disabled = true;
+
+    boardList.innerHTML  = '';
+    boardTitle.textContent = 'Inicia sesión para ver tus tareas';
+    pendingTasks.innerHTML = '';
+    doneTasks.innerHTML    = '';
+    currentBoardId = null;
+
+    if (unsubscribeBoards) { unsubscribeBoards(); unsubscribeBoards = null; }
+  }
+});
+
+// ==============================
+// Boards
+// ==============================
+function startBoardsListener() {
+  // Seguridad: evita duplicar listener
+  if (unsubscribeBoards) unsubscribeBoards();
+
+  unsubscribeBoards = db
+    .collection('boards')
+    .orderBy('createdAt', 'asc')
+    .onSnapshot((snap) => {
+      boardList.innerHTML = '';
+      let firstSelectable = null;
+
+      snap.forEach((doc) => {
+        const board = doc.data();
+        const id    = doc.id;
+        const name  = board.name || '(Sin nombre)';
+
+        const li = document.createElement('li');
+        li.className = 'list-group-item list-group-item-action';
+        li.dataset.boardId = id;
+        li.textContent = name;
+
+        if (id === currentBoardId) li.classList.add('active');
+
+        li.onclick = () => selectBoard(id, name);
+        boardList.appendChild(li);
+
+        if (!firstSelectable) firstSelectable = { id, name };
+      });
+
+      // Si no hay board seleccionado pero existen, seleccionar el primero
+      if (!currentBoardId && firstSelectable) {
+        selectBoard(firstSelectable.id, firstSelectable.name);
+      }
+
+      // Si ya no existe el board seleccionado (pudo borrarse), limpiar UI
+      if (currentBoardId && !snap.docs.find(d => d.id === currentBoardId)) {
+        currentBoardId = null;
+        boardTitle.textContent = 'Selecciona un tablero';
+        taskInput.disabled  = true;
+        addTaskBtn.disabled = true;
+        pendingTasks.innerHTML = '';
+        doneTasks.innerHTML    = '';
+      }
+    }, (err) => {
+      console.error('boards onSnapshot error:', err);
+      alert('Ocurrió un error al cargar tableros.');
+    });
 }
 
-})
-
-
-// ---- BOARDS ----
 addBoardBtn.addEventListener('click', async () => {
   const name = boardInput.value.trim();
   if (!name) return;
@@ -94,42 +175,23 @@ addBoardBtn.addEventListener('click', async () => {
   }
 });
 
-db.collection('boards')
-  .orderBy('createdAt', 'asc')
-  .onSnapshot((snap) => {
-    boardList.innerHTML = '';
-    snap.forEach((doc) => {
-      const board = doc.data();
-      const li = document.createElement('li');
-      li.className = 'list-group-item list-group-item-action';
-      li.textContent = board.name || '(Sin nombre)';
-      if (doc.id === currentBoardId) li.classList.add('active');
-      li.onclick = () => selectBoard(doc.id, board.name || '(Sin nombre)');
-      boardList.appendChild(li);
-    });
-
-    // Si no hay tablero seleccionado pero existen, toma el primero
-    if (!currentBoardId && snap.docs.length) {
-      const first = snap.docs[0];
-      selectBoard(first.id, first.data().name || '(Sin nombre)');
-    }
-  }, (err) => console.error('boards onSnapshot error:', err));
-
 function selectBoard(id, name) {
   currentBoardId = id;
-  boardTitle.textContent = `📋 ${name}`;   // <-- corregido (template string)
-  taskInput.disabled = false;              // <-- corregido (disabled)
+  boardTitle.textContent = `📋 ${name}`;
+  taskInput.disabled  = false;
   addTaskBtn.disabled = false;
 
-  // resaltar activo
+  // Resaltar activo por ID
   Array.from(boardList.children).forEach(li => {
-    li.classList.toggle('active', li.textContent === name);
+    li.classList.toggle('active', li.dataset.boardId === id);
   });
 
   startTasksListener(id);
 }
 
-// ---- TASKS ----
+// ==============================
+// Tasks
+// ==============================
 async function addTask() {
   const text = taskInput.value.trim();
   if (!text || !currentBoardId) return;
@@ -138,7 +200,7 @@ async function addTask() {
     await db.collection('tasks').add({
       text,
       done: false,
-      boardId: currentBoardId, // vínculo con el tablero
+      boardId: currentBoardId,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     taskInput.value = '';
@@ -179,7 +241,7 @@ function createTaskItem(doc) {
 
   const span = document.createElement('span');
   span.textContent = task.text || '(sin texto)';
-  if (task.done) span.style.textDecoration = 'line-through';
+  span.style.textDecoration = task.done ? 'line-through' : 'none';
 
   leftDiv.appendChild(checkbox);
   leftDiv.appendChild(span);
@@ -203,33 +265,27 @@ function createTaskItem(doc) {
 }
 
 function renderTasks(snapshot) {
-  // limpia columnas
   pendingTasks.innerHTML = '';
   doneTasks.innerHTML = '';
 
-  // ordenar por createdAt desc en cliente (así no dependemos de índices)
+  // Ordenar por createdAt desc en cliente
   const docs = snapshot.docs.slice().sort((a, b) => {
     const ta = a.data().createdAt?.toMillis?.() ?? 0;
     const tb = b.data().createdAt?.toMillis?.() ?? 0;
     return tb - ta;
-    // si quieres evitar ordenar en cliente, usa .orderBy('createdAt','desc')
-    // pero puede requerir índice compuesto con where('boardId')
   });
 
   docs.forEach((doc) => {
-    const li = createTaskItem(doc);
+    const item = createTaskItem(doc);
     const data = doc.data();
-    (data.done ? doneTasks : pendingTasks).appendChild(li);
+    (data.done ? doneTasks : pendingTasks).appendChild(item);
   });
 }
 
 function startTasksListener(boardId) {
-  // apaga listener anterior
-  if (unsubscribeTasks) unsubscribeTasks();
+  if (unsubscribeTasks) { unsubscribeTasks(); unsubscribeTasks = null; }
 
-  // solo tareas del tablero actual
   const q = db.collection('tasks').where('boardId', '==', boardId);
-
   unsubscribeTasks = q.onSnapshot(
     (snap) => renderTasks(snap),
     (err) => {

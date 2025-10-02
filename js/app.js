@@ -7,290 +7,217 @@ const firebaseConfig = {
   appId: "1:981827668438:web:8235bb0eb267ec37ecbc77",
 };
 
-// Inicializar Firebase (compat)
+// Inicializar Firebase
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const auth = firebase.auth();
+const db = firebase.firestore()
+const auth = firebase.auth()
 
-// ==============================
-// DOM
-// ==============================
-const taskInput    = document.getElementById('taskInput');
-const addTaskBtn   = document.getElementById('addTaskBtn');
-const pendingTasks = document.getElementById('pendingTasks');
-const doneTasks    = document.getElementById('doneTasks');
 
-const boardTitle   = document.getElementById('boardTitle');
-const boardList    = document.getElementById('boardList');
-const boardInput   = document.getElementById('boardInput');
-const addBoardBtn  = document.getElementById('addBoardBtn');
+// Obtener elementos del DOM para las tareas
+const taskInput = document.getElementById('taskInput')
+const addTaskBtn = document.getElementById('addTaskBtn')
+const pendingTasks = document.getElementById('pendingTasks')
+const doneTasks = document.getElementById('doneTasks')
 
-// botones google
-const loginBtn  = document.getElementById('loginBtn');
-const logoutBtn = document.getElementById('logoutBtn');
-const userInfo  = document.getElementById('userInfo');
+// Elementos Nuevos
+const assignedInput = document.getElementById('assignedInput')
+const statusInput = document.getElementById('statusInput')
+const priorityInput = document.getElementById('priorityInput')
 
-// ==============================
-//
-// Estado
-//
-// ==============================
-let currentBoardId      = null;
-let currentUser         = null;
-let unsubscribeTasks    = null; // listener de tasks del board actual
-let unsubscribeBoards   = null; // listener de boards
+// Referencias al tablero
+const boardTitle = document.getElementById('boardTitle')
+const boardList = document.getElementById('boardList')
+const boardInput = document.getElementById('boardInput')
+const addBoardBtn = document.getElementById('addBoardBtn')
 
-// ==============================
-// Auth
-// ==============================
-loginBtn.addEventListener('click', async () => {
-  try {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    await auth.signInWithPopup(provider);
-  } catch (e) {
-    console.error('Error de login:', e);
-    alert('No se pudo iniciar sesión.');
-  }
-});
+// Botones para Google
+const loginBtn = document.getElementById('loginBtn')
+const logoutBtn = document.getElementById('logoutBtn')
+const userInfo = document.getElementById('userInfo')
+
+// Variables globales para los id del tableros actuales
+let currentBoardId = null
+let currentUser = null 
+
+// Funciones para login y logout con Google
+loginBtn.addEventListener('click', async () =>{
+  const provider = new firebase.auth.GoogleAuthProvider()
+  await auth.signInWithPopup(provider)
+})
 
 logoutBtn.addEventListener('click', async () => {
-  try {
-    await auth.signOut();
-  } catch (e) {
-    console.error('Error al cerrar sesión:', e);
-    alert('No se pudo cerrar sesión.');
-  }
-});
+  await auth.signOut()
+})
 
-auth.onAuthStateChanged(async (user) => {
-  console.log('@@@ user =>', user);
+// Evento que escucha cuando cambia de estado lan autenticación
 
-  // Limpieza básica
-  if (unsubscribeTasks) { unsubscribeTasks(); unsubscribeTasks = null; }
+auth.onAuthStateChanged(user => {
+  console.log('@@ user =>', user)
   if (user) {
-    // Sesión iniciada
-    currentUser = user;
-    userInfo.textContent = user.email;
-    loginBtn.style.display  = 'none';
-    logoutBtn.style.display = 'block';
-
-    boardInput.disabled = false;
-    addBoardBtn.disabled = false;
-
-    taskInput.disabled  = true;  // aún no hay board seleccionado
-    addTaskBtn.disabled = true;
-
-    // Iniciar listener de boards si no existe
-    if (!unsubscribeBoards) startBoardsListener();
+    currentUser = user
+    userInfo.textContent = user.email
+    loginBtn.style.display = 'none'
+    logoutBtn.style.display = 'block'
+    boardTitle.textContent = 'Seleccione un 📋'
+    taskInput.disabled = false
+    addTaskBtn.disabled = false
+    boardInput.disabled = false 
+    addBoardBtn.disabled = false
+    boardList.disabled = false
+    loadBoards()
+    loadTasks()
   } else {
-    // Sesión cerrada
-    currentUser = null;
-    userInfo.textContent  = 'No autenticado';
-    loginBtn.style.display  = 'block';
-    logoutBtn.style.display = 'none';
-
-    boardInput.disabled = true;
-    addBoardBtn.disabled = true;
-
-    taskInput.disabled  = true;
-    addTaskBtn.disabled = true;
-
-    boardList.innerHTML  = '';
-    boardTitle.textContent = 'Inicia sesión para ver tus tareas';
-    pendingTasks.innerHTML = '';
-    doneTasks.innerHTML    = '';
-    currentBoardId = null;
-
-    if (unsubscribeBoards) { unsubscribeBoards(); unsubscribeBoards = null; }
+    currentUser = null
+    userInfo.textContent = 'No autenticado'
+    loginBtn.style.display = 'block'
+    logoutBtn.style.display = 'none'
+    boardInput.disabled = true 
+    addBoardBtn.disabled = true
+    boardList.disabled = true
+    boardList.innerHTML = ''
+    boardTitle.textContent = 'Inicia sesión para ver tus 📋'
+    taskInput.disabled = true
+    addTaskBtn.disabled = true
+    pendingTasks.innerHTML = ''
+    doneTasks.innerHTML = ''
   }
-});
-
-// ==============================
-// Boards
-// ==============================
-function startBoardsListener() {
-  // Seguridad: evita duplicar listener
-  if (unsubscribeBoards) unsubscribeBoards();
-
-  unsubscribeBoards = db
-    .collection('boards')
-    .orderBy('createdAt', 'asc')
-    .onSnapshot((snap) => {
-      boardList.innerHTML = '';
-      let firstSelectable = null;
-
-      snap.forEach((doc) => {
-        const board = doc.data();
-        const id    = doc.id;
-        const name  = board.name || '(Sin nombre)';
-
-        const li = document.createElement('li');
-        li.className = 'list-group-item list-group-item-action';
-        li.dataset.boardId = id;
-        li.textContent = name;
-
-        if (id === currentBoardId) li.classList.add('active');
-
-        li.onclick = () => selectBoard(id, name);
-        boardList.appendChild(li);
-
-        if (!firstSelectable) firstSelectable = { id, name };
-      });
-
-      // Si no hay board seleccionado pero existen, seleccionar el primero
-      if (!currentBoardId && firstSelectable) {
-        selectBoard(firstSelectable.id, firstSelectable.name);
-      }
-
-      // Si ya no existe el board seleccionado (pudo borrarse), limpiar UI
-      if (currentBoardId && !snap.docs.find(d => d.id === currentBoardId)) {
-        currentBoardId = null;
-        boardTitle.textContent = 'Selecciona un tablero';
-        taskInput.disabled  = true;
-        addTaskBtn.disabled = true;
-        pendingTasks.innerHTML = '';
-        doneTasks.innerHTML    = '';
-      }
-    }, (err) => {
-      console.error('boards onSnapshot error:', err);
-      alert('Ocurrió un error al cargar tableros.');
-    });
-}
+})
 
 addBoardBtn.addEventListener('click', async () => {
-  const name = boardInput.value.trim();
-  if (!name) return;
+    const name = boardInput.value.trim()
+    if (name){
+        await db.collection('boards').add({ name })
+        boardInput.value = ''
+    }
+})
 
-  try {
-    const ref = await db.collection('boards').add({
-      name,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    boardInput.value = '';
-    // Seleccionar automáticamente el tablero creado
-    selectBoard(ref.id, name);
-  } catch (e) {
-    console.error('Error al crear tablero:', e);
-    alert('No se pudo crear el tablero.');
+const loadBoards = () => {
+    db.collection('boards').onSnapshot((tableros) =>{
+        boardList.innerHTML = ''
+        tableros.forEach((doc) => {
+            const board = doc.data()
+            const li = document.createElement('li')
+            li.classList = 'list-group-item list-group-item-action'
+            li.textContent = board.name 
+            li.onclick = () => selectBoard(doc.id, board.name)
+            boardList.appendChild(li)
+        })
+    })
+}
+
+
+const selectBoard = (id, name) => {
+    currentBoardId = id
+    boardTitle.textContent = `📋 ${name}`
+    enableTaskForm()
+    loadTasks()
+}
+
+// Función para habilitar Inputs de formulario para tareas
+const enableTaskForm = () => {
+  taskInput.disabled = false 
+  assignedInput.disabled = false 
+  priorityInput.disabled = false
+  addTaskBtn.disabled = false 
+  statusInput.disabled = false
+}
+
+const disableTaskForm = () => {
+  taskInput.disabled = true 
+  assignedInput.disabled = true 
+  priorityInput.disabled = true
+  addTaskBtn.disabled = true 
+  statusInput.disabled = true
+}
+
+// Helpers para color de prioridad y status
+const getStatusColor = status => {
+  switch (status) {
+    case 'Pendiente': return 'secondary'
+    case 'En progreso': return 'info'
+    case 'Bloqueado': return 'warning'
+    case 'Hecho' : return 'success'
+    default: return 'dark'
   }
-});
-
-function selectBoard(id, name) {
-  currentBoardId = id;
-  boardTitle.textContent = `📋 ${name}`;
-  taskInput.disabled  = false;
-  addTaskBtn.disabled = false;
-
-  // Resaltar activo por ID
-  Array.from(boardList.children).forEach(li => {
-    li.classList.toggle('active', li.dataset.boardId === id);
-  });
-
-  startTasksListener(id);
 }
 
-// ==============================
-// Tasks
-// ==============================
-async function addTask() {
-  const text = taskInput.value.trim();
-  if (!text || !currentBoardId) return;
 
-  try {
-    await db.collection('tasks').add({
-      text,
-      done: false,
-      boardId: currentBoardId,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    taskInput.value = '';
-    taskInput.focus();
-  } catch (err) {
-    console.error('Error al guardar tarea:', err);
-    alert('No se pudo guardar la tarea.');
+// Agregamos evento click al botón
+addTaskBtn.addEventListener('click', async () =>{
+    const text = taskInput.value.trim()
+    const assigned = assignedInput.value.trim()
+    const status = statusInput.value
+    const priority = priorityInput.value 
+
+    if(text && assigned && currentUser && currentBoardId){
+        await db.collection('tasks').add({
+            text,
+            assigned,
+            status,
+            priority, 
+            done: status === 'Hecho',
+            boardId: currentBoardId,
+            userId: currentUser.uid
+        })
+        taskInput.value = ''
+        assignedInput.value = ''
+        statusInput.value = 'Pendiente'
+        priorityInput.value = 'Media'
+    } else {
+      alert('Por favor, selecciona un tablero y escribe una tarea.')
+    }
+})
+
+const getPriorityColor = priority => {
+  switch (priority) {
+    case 'Alta': return 'danger'
+    case 'Media': return 'primary'
+    case 'Baja': return 'success'
+    default: return 'secondary'
   }
 }
 
-addTaskBtn.addEventListener('click', addTask);
-taskInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') addTask();
-});
+// Función para escuchar en tiempo real la db
 
-function createTaskItem(doc) {
-  const task = doc.data();
-  const li = document.createElement('li');
-  li.className = 'list-group-item d-flex justify-content-between align-items-center';
+const loadTasks = () => {
+  db.collection('tasks').where('boardId', '==', currentBoardId)
+  .onSnapshot((tasks) => {
+    pendingTasks.innerHTML = ''
+    doneTasks.innerHTML = ''
+    tasks.forEach((doc) => {
+      const task = doc.data()
+      const li = document.createElement('li')
 
-  // izquierda: checkbox + texto
-  const leftDiv = document.createElement('div');
-  leftDiv.className = 'd-flex align-items-center';
+      li.className = 'list-group-item'
+      // Card de las tareas
+      li.innerHTML =
+`
+        <div class = "d-flex justify-content-between align-items-center">
+          <div>
+            <strong>${task.text}</strong>
+            <small>👤 ${task.assigned}</small>
+            <span class="badge bg-${getStatusColor(task.status)}">
+              ${task.status}
+            </span>
+            <span class="badge bg-${getPriorityColor(task.priority)}">
+              ${task.priority}
+            </span>
+          </div>
 
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.className = 'form-check-input me-2';
-  checkbox.checked = !!task.done;
-  checkbox.onchange = async () => {
-    try {
-      await db.collection('tasks').doc(doc.id).update({ done: checkbox.checked });
-    } catch (e) {
-      console.error('Error al actualizar done:', e);
-      alert('No se pudo actualizar la tarea.');
-      checkbox.checked = !checkbox.checked;
-    }
-  };
+          <div>
+            <button class="btn btn-sm btn-danger">🗑</button>   
+          </div>
+        </div>
+`
 
-  const span = document.createElement('span');
-  span.textContent = task.text || '(sin texto)';
-  span.style.textDecoration = task.done ? 'line-through' : 'none';
+      li.querySelector('button').onclick = () => db.collection('tasks').doc(doc.id).delete()
 
-  leftDiv.appendChild(checkbox);
-  leftDiv.appendChild(span);
-
-  // derecha: eliminar
-  const delBtn = document.createElement('button');
-  delBtn.className = 'btn btn-danger btn-sm';
-  delBtn.textContent = 'Eliminar';
-  delBtn.onclick = async () => {
-    try {
-      await db.collection('tasks').doc(doc.id).delete();
-    } catch (e) {
-      console.error('Error al eliminar:', e);
-      alert('No se pudo eliminar la tarea.');
-    }
-  };
-
-  li.appendChild(leftDiv);
-  li.appendChild(delBtn);
-  return li;
-}
-
-function renderTasks(snapshot) {
-  pendingTasks.innerHTML = '';
-  doneTasks.innerHTML = '';
-
-  // Ordenar por createdAt desc en cliente
-  const docs = snapshot.docs.slice().sort((a, b) => {
-    const ta = a.data().createdAt?.toMillis?.() ?? 0;
-    const tb = b.data().createdAt?.toMillis?.() ?? 0;
-    return tb - ta;
-  });
-
-  docs.forEach((doc) => {
-    const item = createTaskItem(doc);
-    const data = doc.data();
-    (data.done ? doneTasks : pendingTasks).appendChild(item);
-  });
-}
-
-function startTasksListener(boardId) {
-  if (unsubscribeTasks) { unsubscribeTasks(); unsubscribeTasks = null; }
-
-  const q = db.collection('tasks').where('boardId', '==', boardId);
-  unsubscribeTasks = q.onSnapshot(
-    (snap) => renderTasks(snap),
-    (err) => {
-      console.error('tasks onSnapshot error:', err);
-      alert('Ocurrió un error al escuchar las tareas.');
-    }
-  );
+      // Agregar a la lista correspondiente
+      if (task.done) {
+        doneTasks.appendChild(li)
+      } else {
+        pendingTasks.appendChild(li)
+      }
+    })
+  })
 }
